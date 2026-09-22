@@ -202,6 +202,13 @@ let ST={users:[],interest:{},assign:{}};
 let meId=null, myName='', myRoom='XIAOMI';
 const SKEY='mi-store-collab';
 
+// ==================== DOM REFS ====================
+const sCap=document.getElementById('sCap'), sAsn=document.getElementById('sAsn'),
+      sUsr=document.getElementById('sUsr'), sInt=document.getElementById('sInt'),
+      mList=document.getElementById('mList'), oList=document.getElementById('oList'),
+      sGrid=document.getElementById('sGrid'), aTitle=document.getElementById('aTitle'),
+      aBody=document.getElementById('aBody');
+
 // ==================== UTIL ====================
 const uid=()=>'u'+Date.now().toString(36)+Math.random().toString(36).substr(2,4);
 const findU=id=>ST.users.find(u=>u.id===id);
@@ -230,7 +237,7 @@ function initSync(){
   hubId='mi-store-'+myRoom.toLowerCase();
   try{
     peer=new Peer(hubId,{debug:0});
-    peer.on('open',(id)=>{
+    peer.on('open',()=>{
       isHub=true;syncReady=true;
       setConn('🟢 房间创建者','#4CAF50');
     });
@@ -241,7 +248,6 @@ function initSync(){
       if(err.type==='unavailable-id'){
         joinAsMember();
       } else if(err.type==='peer-unavailable'){
-        // Hub vanished, try to become hub
         setTimeout(()=>{try{peer.destroy()}catch(e){};initSync()},3000);
       } else {
         setConn('🟡 仅本地模式','#FF9800');
@@ -256,8 +262,9 @@ function initSync(){
 
 function joinAsMember(){
   try{
+    try{peer.destroy()}catch(e){}
     peer=new Peer();
-    peer.on('open',(id)=>{
+    peer.on('open',()=>{
       isHub=false;
       const conn=peer.connect(hubId,{reliable:true});
       setupConn(conn);
@@ -278,10 +285,11 @@ function setupConn(conn){
     syncReady=true;
     if(isHub){
       setConn('🟢 房间创建者','#4CAF50');
-      // Send full state to new member
       conn.send({type:'sync',data:JSON.parse(JSON.stringify(ST))});
     } else {
       setConn('🟢 已连接','#4CAF50');
+      // 加入者主动上报自己的身份，避免 hub 状态里没有自己
+      conn.send({type:'join',user:me()});
     }
   });
   conn.on('data',(data)=>{
@@ -289,10 +297,15 @@ function setupConn(conn){
       ST=data.data;
       saveLocal();render();
       if(isHub){
-        // Relay to all others
         Object.entries(conns).forEach(([pid,c])=>{
           if(pid!==conn.peer&&c.open)c.send(data);
         });
+      }
+    } else if(data.type==='join'&&data.user){
+      if(!ST.users.find(u=>u.id===data.user.id)){
+        ST.users.push(data.user);
+        saveLocal();render();
+        broadcast();
       }
     }
   });
@@ -321,9 +334,12 @@ function setConn(txt,color){
 let map,markers={},icoOrange,icoBlue,icoFull,icoPart;
 
 function initMap(){
+  if(map)return;                       // 防止重复初始化
+  const el=document.getElementById('map');
+  if(!el||typeof L==='undefined')return;
+
   map=L.map('map').setView([39.95,116.35],11);
 
-  // 高德地图瓦片（国内可直接访问）
   L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
     subdomains:['1','2','3','4'],
     attribution:'© 高德地图'
@@ -340,20 +356,26 @@ function initMap(){
     const m=L.marker([st.lat,st.lng],{icon:ico}).addTo(map).bindPopup('...');
     m.on('click',()=>{
       document.querySelectorAll('.card').forEach(c=>c.classList.remove('hl'));
-      document.getElementById('cd-'+st.id)?.classList.add('hl');
+      const c=document.getElementById('cd-'+st.id);
+      if(c)c.classList.add('hl');
     });
     markers[st.id]=m;
   });
 
-  L.control({position:'bottomright'}).onAdd=function(){
+  /* ★ 修复点：原来写成 L.control({...}).onAdd = function(){...}.addTo(map)
+     会在加载地图时抛 TypeError，导致 doSetup 中断、弹窗关不掉 */
+  const legend=L.control({position:'bottomright'});
+  legend.onAdd=function(){
     const d=L.DomUtil.create('div');
     Object.assign(d.style,{background:'#fff',padding:'10px 14px',borderRadius:'8px',boxShadow:'0 2px 8px rgba(0,0,0,.15)',fontSize:'.8em',lineHeight:'1.7'});
     d.innerHTML=`<b>图例</b><br><span style="color:#FF6700">●</span> 专卖店<br><span style="color:#2196F3">●</span> 直营店<br><span style="color:#FF9800">●</span> 部分分配<br><span style="color:#4CAF50">●</span> 已满`;
     return d;
-  }.addTo(map);
+  };
+  legend.addTo(map);
 }
 
 function renderMap(){
+  if(!map)return;
   STORES.forEach(st=>{
     const m=markers[st.id];if(!m)return;
     const intl=ST.interest[st.id]||[],asnl=ST.assign[st.id]||[];
@@ -379,10 +401,10 @@ function renderMap(){
 
 function flyTo(sid){
   const st=STORES.find(s=>s.id===sid);
-  map.setView([st.lat,st.lng],15);
-  markers[sid].openPopup();
+  if(map){map.setView([st.lat,st.lng],15);markers[sid].openPopup();}
   document.querySelectorAll('.card').forEach(c=>c.classList.remove('hl'));
-  document.getElementById('cd-'+sid)?.classList.add('hl');
+  const c=document.getElementById('cd-'+sid);
+  if(c)c.classList.add('hl');
 }
 
 // ==================== ACTIONS ====================
@@ -406,7 +428,6 @@ function addAssign(sid,uid_){
   if(!ST.assign[sid])ST.assign[sid]=[];
   const store=STORES.find(s=>s.id===sid);
   if(ST.assign[sid].length>=store.cap){toast('名额已满！','warn');return false}
-  // Check if already assigned to another store
   for(const[k,v]of Object.entries(ST.assign)){
     if(k!==sid&&v.includes(uid_)){toast('该成员已分配到其他门店','warn');return false}
   }
@@ -423,19 +444,16 @@ function unassignSelf(sid){if(meId){rmAssign(sid,meId)}}
 function resetAll(){
   if(confirm('确定要清除所有数据吗？此操作不可恢复。')){
     ST={users:[],interest:{},assign:{}};
-    saveLocal();broadcast();
     if(meId){
-      const u={id:meId,name:myName,c:COLORS[0]};
-      ST.users.push(u);
-      saveLocal();broadcast();
+      ST.users.push({id:meId,name:myName,c:COLORS[0]});
     }
-    render();toast('已全部重置','info');
+    saveLocal();broadcast();render();toast('已全部重置','info');
   }
 }
 
 // ==================== SHARE / EXPORT / IMPORT ====================
 function genShareLink(){
-  const url=location.href.split('#')[0]+'?room='+myRoom;
+  const url=location.href.split('#')[0].split('?')[0]+'?room='+encodeURIComponent(myRoom);
   navigator.clipboard.writeText(url).then(()=>toast('房间链接已复制！发给同事打开即可协作 🔗','ok'))
     .catch(()=>prompt('复制此链接分享给同事：',url));
 }
@@ -450,7 +468,6 @@ function doImport(){
   if(!raw){toast('请粘贴数据','warn');return}
   try{
     const d=JSON.parse(raw);
-    // Merge
     (d.users||[]).forEach(bu=>{if(!ST.users.find(u=>u.id===bu.id))ST.users.push(bu)});
     Object.keys(d.interest||{}).forEach(k=>{
       ST.interest[k]=[...new Set([...(ST.interest[k]||[]),...d.interest[k]])];
@@ -467,19 +484,24 @@ function doImport(){
 // ==================== SETUP ====================
 function doSetup(){
   const name=document.getElementById('uName').value.trim();
-  const room=document.getElementById('uRoom').value.trim().toUpperCase()||'XIAOMI';
+  let room=document.getElementById('uRoom').value.trim().toUpperCase()||'XIAOMI';
   if(!name){toast('请输入您的名字','warn');return}
+
+  const urlRoom=new URLSearchParams(location.search).get('room');
+  if(urlRoom)room=urlRoom.toUpperCase();
+
   myName=name;myRoom=room;
 
-  // Check URL params for room
-  const params=new URLSearchParams(location.search);
-  const urlRoom=params.get('room');
-  if(urlRoom)myRoom=urlRoom.toUpperCase();
+  loadLocal();                 // 先加载该房间的已有数据
+  // 同名成员复用，避免重复身份
+  const exist=ST.users.find(u=>u.name===name);
+  if(exist){meId=exist.id;}
+  else{addUser(name);}
 
-  loadLocal();
-  addUser(name);
-  initMap();
-  initSync();
+  // ★ 地图/联机失败也不能挡住“进入房间”
+  try{ initMap(); }catch(e){ console.error('地图初始化失败：',e); }
+  try{ initSync(); }catch(e){ console.error('同步初始化失败：',e); setConn('🟡 仅本地模式','#FF9800'); }
+
   closeModal('userModal');
   render();
   toast(`欢迎 ${name}！房间号：${myRoom} 🎉`,'ok');
@@ -588,18 +610,15 @@ function openAssign(sid){
 }
 
 function chkAssign(sid,uid_,chk){
-  if(chk){const ok=addAssign(sid,uid_);}
+  if(chk){addAssign(sid,uid_);}
   else{rmAssign(sid,uid_)}
   openAssign(sid);
 }
 
 // ==================== INIT ====================
 (function init(){
-  // Check URL for room parameter
-  const params=new URLSearchParams(location.search);
-  const urlRoom=params.get('room');
+  const urlRoom=new URLSearchParams(location.search).get('room');
 
-  // Try to restore session
   try{
     const saved=localStorage.getItem(SKEY+'-me');
     if(saved){
@@ -608,22 +627,19 @@ function chkAssign(sid,uid_,chk){
         myName=s.name;myRoom=urlRoom?urlRoom.toUpperCase():(s.room||'XIAOMI');
         loadLocal();
         meId=s.id;
-        // Verify user exists in state
         if(!findU(meId)){
-          const u={id:meId,name:myName,c:COLORS[0]};
-          ST.users.push(u);
+          ST.users.push({id:meId,name:myName,c:COLORS[0]});
           saveLocal();
         }
         closeModal('userModal');
-        initMap();
-        initSync();
+        try{ initMap(); }catch(e){ console.error('地图初始化失败：',e); }
+        try{ initSync(); }catch(e){ console.error('同步初始化失败：',e); setConn('🟡 仅本地模式','#FF9800'); }
         render();
         return;
       }
     }
   }catch(e){}
 
-  // Show setup modal
   if(urlRoom)document.getElementById('uRoom').value=urlRoom.toUpperCase();
 })();
 </script>
