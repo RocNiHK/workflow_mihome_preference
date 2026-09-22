@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>北京小米之家门店协作分配</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+:root{--p:#FF6700;--p2:#FF8533;--bg:#F0F2F5;--t:#333;--tm:#999;--b:#E0E0E0;--g:#4CAF50;--bl:#2196F3;--am:#FF9800;--r:#f44336}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:var(--bg);min-height:100vh}
+
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)}
+.modal.open{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:28px;max-width:520px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:popIn .25s ease}
+@keyframes popIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-box h2{margin-bottom:18px;font-size:1.25em;color:var(--t)}
+.fg{margin-bottom:14px}
+.fg label{display:block;margin-bottom:5px;font-weight:600;color:#555;font-size:.93em}
+.fg input,.fg textarea{width:100%;padding:10px 14px;border:2px solid var(--b);border-radius:8px;font-size:.95em;transition:border .3s}
+.fg input:focus,.fg textarea:focus{outline:none;border-color:var(--p)}
+.mbtns{display:flex;gap:10px;margin-top:16px}
+.mbtns button{flex:1;padding:11px;border:none;border-radius:8px;cursor:pointer;font-size:.95em;font-weight:600;transition:.2s}
+.btn-p{background:var(--p);color:#fff}.btn-p:hover{background:#E55A00}
+.btn-s{background:#eee;color:#333}.btn-s:hover{background:#ddd}
+
+.header{background:linear-gradient(135deg,var(--p),var(--p2));padding:20px 25px;color:#fff}
+.header-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.header h1{font-size:1.5em;text-shadow:1px 2px 4px rgba(0,0,0,.15)}
+.hdr-right{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.badge{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.2);padding:5px 14px;border-radius:20px;font-size:.85em}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.avatar{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.72em;font-weight:700;color:#fff;flex-shrink:0}
+.stats{display:flex;gap:12px;flex-wrap:wrap}
+.st{background:rgba(255,255,255,.95);border-radius:10px;padding:10px 18px;text-align:center;flex:1;min-width:80px}
+.st .n{font-size:1.5em;font-weight:700;color:var(--p)}
+.st .l{color:#777;font-size:.78em}
+
+.toolbar{display:flex;gap:8px;padding:12px 25px;background:#fff;border-bottom:1px solid var(--b);flex-wrap:wrap}
+.tbtn{padding:7px 14px;border:1px solid var(--b);border-radius:6px;background:#fff;cursor:pointer;font-size:.83em;transition:.2s}
+.tbtn:hover{background:var(--p);color:#fff;border-color:var(--p)}
+
+.main{display:grid;grid-template-columns:1fr 280px;gap:18px;padding:18px 25px}
+@media(max-width:800px){.main{grid-template-columns:1fr}}
+#map{height:430px;border-radius:12px;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+.sidebar h3{font-size:.93em;color:var(--t);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.mlist,.olist{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.mitem{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.mitem .mn{font-weight:600;font-size:.88em;color:var(--t)}
+.mitem .ma{font-size:.75em;color:var(--tm);margin-left:auto;text-align:right}
+.pbar{flex:1;height:7px;background:#e0e0e0;border-radius:4px;overflow:hidden}
+.pfill{height:100%;border-radius:4px;transition:width .3s}
+.ocount{font-size:.8em;font-weight:700;min-width:32px;text-align:right}
+
+.section-title{padding:16px 25px 4px;font-size:1.05em;color:var(--t)}
+.hint{padding:0 25px 8px;font-size:.82em;color:var(--tm)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px;padding:10px 25px 25px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 3px 12px rgba(0,0,0,.07);border-left:4px solid var(--p);transition:transform .25s,box-shadow .25s}
+.card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.1)}
+.card.hl{outline:3px solid var(--p);outline-offset:-1px}
+.card.assigned{border-left-color:var(--g)}
+.card h3{font-size:.96em;color:var(--t);margin-bottom:8px}
+.tags{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.tag{padding:2px 10px;border-radius:14px;font-size:.76em;font-weight:600}
+.tg-d{background:var(--p);color:#fff}
+.tg-t{background:#E3F2FD;color:#1565C0}
+.tg-c{background:#E8F5E9;color:#2E7D32}
+.csec{border-top:1px solid #f0f0f0;padding-top:10px;margin-top:10px}
+.csec-t{font-size:.8em;color:var(--tm);margin-bottom:6px;display:flex;align-items:center;gap:4px}
+.ilt{display:flex;flex-wrap:wrap;gap:5px;min-height:26px}
+.itag{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:14px;font-size:.78em;color:#fff;font-weight:600}
+.empty-txt{color:#ccc;font-size:.8em;font-style:italic}
+.slots{display:flex;flex-wrap:wrap;gap:7px}
+.slot{width:80px;height:60px;border:2px dashed var(--b);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:.76em;cursor:pointer;transition:.2s}
+.slot .si{font-size:1.1em}
+.slot .sn{font-weight:700;font-size:.85em}
+.slot.empty{color:#ccc}.slot.empty:hover{border-color:var(--p);color:var(--p);background:#FFF8F0}
+.slot.filled{border-style:solid;color:#fff;position:relative}
+.slot.filled .sx{position:absolute;top:2px;right:4px;font-size:.62em;cursor:pointer;opacity:.8}
+.slot.filled:hover .sx{opacity:1}
+.bfull{font-size:.7em;background:var(--r);color:#fff;padding:1px 7px;border-radius:10px;margin-left:4px}
+.cacts{display:flex;gap:6px;margin-top:12px}
+.cacts button{flex:1;padding:8px;border:2px solid;border-radius:8px;background:#fff;cursor:pointer;font-size:.84em;font-weight:600;transition:.2s}
+.b-int{border-color:var(--p);color:var(--p)}.b-int:hover,.b-int.on{background:var(--p);color:#fff}
+.b-as{border-color:var(--bl);color:var(--bl)}.b-as:hover{background:var(--bl);color:#fff}
+.b-un{border-color:var(--r);color:var(--r);flex:0!important;padding:8px 12px!important}.b-un:hover{background:var(--r);color:#fff}
+
+.au{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--b);border-radius:8px;margin-bottom:7px;cursor:pointer;transition:.2s}
+.au:hover{background:#f9f9f9}
+.au.sel{border-color:var(--p);background:#FFF5EC}
+.au.dis{opacity:.4;cursor:not-allowed}
+.au input{width:17px;height:17px;accent-color:var(--p)}
+.au .info{margin-left:auto;font-size:.75em;color:var(--tm)}
+
+#toast-box{position:fixed;top:18px;right:18px;z-index:10000;display:flex;flex-direction:column;gap:8px}
+.toast{padding:11px 18px;border-radius:8px;color:#fff;font-size:.86em;box-shadow:0 4px 14px rgba(0,0,0,.18);animation:sIn .3s ease;max-width:340px}
+.toast.ok{background:var(--g)}.toast.info{background:var(--bl)}.toast.warn{background:var(--am)}.toast.err{background:var(--r)}
+@keyframes sIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+.footer{text-align:center;color:var(--tm);padding:18px;font-size:.8em;border-top:1px solid var(--b);margin:0 25px}
+</style>
+</head>
+<body>
+
+<!-- Setup Modal -->
+<div class="modal open" id="userModal">
+<div class="modal-box">
+  <h2>👋 欢迎使用门店协作分配</h2>
+  <div class="fg"><label>您的名字</label><input id="uName" placeholder="请输入您的名字" maxlength="10"></div>
+  <div class="fg"><label>房间号（与同事一致即可）</label><input id="uRoom" placeholder="例如：TEAM1" maxlength="12" value="XIAOMI"></div>
+  <p style="font-size:.82em;color:var(--tm);margin-bottom:6px">💡 输入相同房间号的成员将实时同步数据</p>
+  <div class="mbtns"><button class="btn-p" onclick="doSetup()">进入 🚀</button></div>
+</div>
+</div>
+
+<!-- Assign Modal -->
+<div class="modal" id="assignModal">
+<div class="modal-box">
+  <h2 id="aTitle">📋 分配名额</h2>
+  <div id="aBody"></div>
+  <div class="mbtns"><button class="btn-s" onclick="closeModal('assignModal')">关闭</button></div>
+</div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal" id="importModal">
+<div class="modal-box">
+  <h2>📥 导入数据</h2>
+  <div class="fg"><label>粘贴导出的数据</label><textarea id="impData" rows="6" placeholder="粘贴 JSON 数据"></textarea></div>
+  <div class="mbtns">
+    <button class="btn-s" onclick="closeModal('importModal')">取消</button>
+    <button class="btn-p" onclick="doImport()">导入</button>
+  </div>
+</div>
+</div>
+
+<div id="toast-box"></div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-top">
+    <h1>🏠 北京小米之家门店协作分配</h1>
+    <div class="hdr-right">
+      <div class="badge"><span class="dot" id="connDot" style="background:#FF9800"></span><span id="connTxt">连接中…</span></div>
+      <div class="badge" id="userBadge"></div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="st"><div class="n">7</div><div class="l">门店</div></div>
+    <div class="st"><div class="n">3</div><div class="l">区域</div></div>
+    <div class="st"><div class="n" id="sCap">15</div><div class="l">总名额</div></div>
+    <div class="st"><div class="n" id="sAsn">0</div><div class="l">已分配</div></div>
+    <div class="st"><div class="n" id="sUsr">0</div><div class="l">成员</div></div>
+    <div class="st"><div class="n" id="sInt">0</div><div class="l">意向总数</div></div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <button class="tbtn" onclick="genShareLink()">🔗 分享房间链接</button>
+  <button class="tbtn" onclick="doExport()">📋 导出数据</button>
+  <button class="tbtn" onclick="openModal('importModal')">📥 导入数据</button>
+  <button class="tbtn" onclick="resetAll()">🗑️ 全部重置</button>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <h3>👥 团队成员</h3>
+    <div class="mlist" id="mList"></div>
+    <h3>📊 分配进度</h3>
+    <div class="olist" id="oList"></div>
+  </div>
+</div>
+
+<!-- Store Cards -->
+<div class="section-title">🏪 门店列表</div>
+<div class="hint">💡 每人可勾选多个门店作为意向 ｜ 点击卡片定位到地图 ｜ 分配后每人只能去一家门店</div>
+<div class="grid" id="sGrid"></div>
+
+<div class="footer">北京小米之家门店协作分配系统 ｜ 部署至 Vercel / GitHub Pages 即可多人在线协作</div>
+
+<script>
+// ==================== DATA ====================
+const COLORS=['#4CAF50','#2196F3','#FF9800','#9C27B0','#f44336','#00BCD4','#795548','#607D8B','#E91E63','#3F51B5'];
+const STORES=[
+ {id:'s1',name:'小米之家北京昌平区沙河万达专卖店',sn:'沙河万达',d:'昌平区',lat:40.22,lng:116.30,cap:2,t:'专卖店'},
+ {id:'s2',name:'小米之家北京昌平区回龙观华联专卖店',sn:'回龙观华联',d:'昌平区',lat:40.07,lng:116.33,cap:2,t:'专卖店'},
+ {id:'s3',name:'小米之家北京昌平区龙旗购物中心专卖店',sn:'龙旗购物中心',d:'昌平区',lat:40.06,lng:116.42,cap:2,t:'专卖店'},
+ {id:'s4',name:'小米之家北京海淀区五道口购物中心专卖店',sn:'五道口',d:'海淀区',lat:39.99,lng:116.34,cap:2,t:'专卖店'},
+ {id:'s5',name:'小米之家北京昌平区天通苑华联专卖店',sn:'天通苑华联',d:'昌平区',lat:40.07,lng:116.42,cap:2,t:'专卖店'},
+ {id:'s6',name:'小米之家北京海淀区清河万象汇',sn:'清河万象汇',d:'海淀区',lat:40.03,lng:116.35,cap:2,t:'直营店'},
+ {id:'s7',name:'小米之家北京西城区凯德MALL西直门店',sn:'凯德MALL',d:'西城区',lat:39.94,lng:116.35,cap:3,t:'直营店'}
+];
+
+// ==================== STATE ====================
+let ST={users:[],interest:{},assign:{}};
+let meId=null, myName='', myRoom='XIAOMI';
+const SKEY='mi-store-collab';
+
+// ==================== UTIL ====================
+const uid=()=>'u'+Date.now().toString(36)+Math.random().toString(36).substr(2,4);
+const findU=id=>ST.users.find(u=>u.id===id);
+const me=()=>findU(meId);
+
+function toast(msg,type='info'){
+  const d=document.createElement('div');d.className='toast '+type;d.textContent=msg;
+  document.getElementById('toast-box').appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transform='translateX(100%)';setTimeout(()=>d.remove(),300)},3500);
+}
+function openModal(id){document.getElementById(id).classList.add('open')}
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+
+function saveLocal(){
+  try{localStorage.setItem(SKEY+myRoom,JSON.stringify(ST))}catch(e){}
+  try{localStorage.setItem(SKEY+'-me',JSON.stringify({id:meId,name:myName,room:myRoom}))}catch(e){}
+}
+function loadLocal(){
+  try{const s=localStorage.getItem(SKEY+myRoom);if(s)ST=JSON.parse(s)}catch(e){}
+}
+
+// ==================== P2P SYNC (PeerJS) ====================
+let peer=null, conns={}, isHub=false, hubId='', syncReady=false;
+
+function initSync(){
+  hubId='mi-store-'+myRoom.toLowerCase();
+  try{
+    peer=new Peer(hubId,{debug:0});
+    peer.on('open',(id)=>{
+      isHub=true;syncReady=true;
+      setConn('🟢 房间创建者','#4CAF50');
+    });
+    peer.on('connection',(conn)=>{
+      setupConn(conn);
+    });
+    peer.on('error',(err)=>{
+      if(err.type==='unavailable-id'){
+        joinAsMember();
+      } else if(err.type==='peer-unavailable'){
+        // Hub vanished, try to become hub
+        setTimeout(()=>{try{peer.destroy()}catch(e){};initSync()},3000);
+      } else {
+        setConn('🟡 仅本地模式','#FF9800');
+        syncReady=false;
+      }
+    });
+  }catch(e){
+    setConn('🟡 仅本地模式','#FF9800');
+    syncReady=false;
+  }
+}
+
+function joinAsMember(){
+  try{
+    peer=new Peer();
+    peer.on('open',(id)=>{
+      isHub=false;
+      const conn=peer.connect(hubId,{reliable:true});
+      setupConn(conn);
+    });
+    peer.on('error',()=>{
+      setConn('🟡 仅本地模式','#FF9800');
+      syncReady=false;
+    });
+  }catch(e){
+    setConn('🟡 仅本地模式','#FF9800');
+    syncReady=false;
+  }
+}
+
+function setupConn(conn){
+  conns[conn.peer]=conn;
+  conn.on('open',()=>{
+    syncReady=true;
+    if(isHub){
+      setConn('🟢 房间创建者','#4CAF50');
+      // Send full state to new member
+      conn.send({type:'sync',data:JSON.parse(JSON.stringify(ST))});
+    } else {
+      setConn('🟢 已连接','#4CAF50');
+    }
+  });
+  conn.on('data',(data)=>{
+    if(data.type==='sync'){
+      ST=data.data;
+      saveLocal();render();
+      if(isHub){
+        // Relay to all others
+        Object.entries(conns).forEach(([pid,c])=>{
+          if(pid!==conn.peer&&c.open)c.send(data);
+        });
+      }
+    }
+  });
+  conn.on('close',()=>{
+    delete conns[conn.peer];
+    if(!isHub&&Object.keys(conns).length===0){
+      setConn('🔴 连接断开','#f44336');syncReady=false;
+    }
+    render();
+  });
+  conn.on('error',()=>{});
+}
+
+function broadcast(){
+  if(!syncReady)return;
+  const msg={type:'sync',data:JSON.parse(JSON.stringify(ST))};
+  Object.values(conns).forEach(c=>{if(c.open)c.send(msg)});
+}
+
+function setConn(txt,color){
+  document.getElementById('connTxt').textContent=txt;
+  document.getElementById('connDot').style.background=color;
+}
+
+// ==================== MAP ====================
+let map,markers={},icoOrange,icoBlue,icoFull,icoPart;
+
+function initMap(){
+  map=L.map('map').setView([39.95,116.35],11);
+
+  // 高德地图瓦片（国内可直接访问）
+  L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
+    subdomains:['1','2','3','4'],
+    attribution:'© 高德地图'
+  }).addTo(map);
+
+  const mkIcon=c=>L.divIcon({
+    html:`<svg width="30" height="40" viewBox="0 0 30 40"><path d="M15 0C6.7 0 0 6.7 0 15c0 11.2 15 25 15 25s15-13.8 15-25C30 6.7 23.3 0 15 0z" fill="${c}"/><circle cx="15" cy="15" r="8" fill="#fff"/><text x="15" y="19" text-anchor="middle" font-size="10" fill="${c}" font-weight="bold">Mi</text></svg>`,
+    className:'',iconSize:[30,40],iconAnchor:[15,40]
+  });
+  icoOrange=mkIcon('#FF6700');icoBlue=mkIcon('#2196F3');icoFull=mkIcon('#4CAF50');icoPart=mkIcon('#FF9800');
+
+  STORES.forEach(st=>{
+    const ico=st.t==='直营店'?icoBlue:icoOrange;
+    const m=L.marker([st.lat,st.lng],{icon:ico}).addTo(map).bindPopup('...');
+    m.on('click',()=>{
+      document.querySelectorAll('.card').forEach(c=>c.classList.remove('hl'));
+      document.getElementById('cd-'+st.id)?.classList.add('hl');
+    });
+    markers[st.id]=m;
+  });
+
+  L.control({position:'bottomright'}).onAdd=function(){
+    const d=L.DomUtil.create('div');
+    Object.assign(d.style,{background:'#fff',padding:'10px 14px',borderRadius:'8px',boxShadow:'0 2px 8px rgba(0,0,0,.15)',fontSize:'.8em',lineHeight:'1.7'});
+    d.innerHTML=`<b>图例</b><br><span style="color:#FF6700">●</span> 专卖店<br><span style="color:#2196F3">●</span> 直营店<br><span style="color:#FF9800">●</span> 部分分配<br><span style="color:#4CAF50">●</span> 已满`;
+    return d;
+  }.addTo(map);
+}
+
+function renderMap(){
+  STORES.forEach(st=>{
+    const m=markers[st.id];if(!m)return;
+    const intl=ST.interest[st.id]||[],asnl=ST.assign[st.id]||[];
+    const full=asnl.length>=st.cap,part=asnl.length>0;
+    m.setIcon(full?icoFull:part?icoPart:(st.t==='直营店'?icoBlue:icoOrange));
+
+    const intN=intl.map(u=>{const p=findU(u);return p?`<span style="display:inline-block;padding:2px 6px;border-radius:10px;font-size:.76em;color:#fff;background:${p.c};margin:1px">${p.name}</span>`:''}).join('');
+    const asN=asnl.map(u=>{const p=findU(u);return p?`<span style="display:inline-block;padding:2px 6px;border-radius:10px;font-size:.76em;color:#fff;background:${p.c};margin:1px">${p.name}</span>`:''}).join('');
+
+    m.setPopupContent(`<div style="min-width:230px">
+      <h3 style="margin:0 0 6px;color:#FF6700;font-size:1em">${st.sn}</h3>
+      <p style="margin:3px 0;font-size:.83em"><b>区域：</b>${st.d} ｜ <b>类型：</b>${st.t}</p>
+      <p style="margin:3px 0;font-size:.83em"><b>名额：</b>${asnl.length}/${st.cap} 人</p>
+      ${intN?`<p style="margin:5px 0;font-size:.8em"><b>意向：</b>${intN}</p>`:''}
+      ${asN?`<p style="margin:5px 0;font-size:.8em"><b>已分配：</b>${asN}</p>`:''}
+      <div style="display:flex;gap:5px;margin-top:8px">
+        <button onclick="toggleInt('${st.id}');map.closePopup()" style="flex:1;padding:5px;border:2px solid #FF6700;background:#fff;color:#FF6700;border-radius:6px;cursor:pointer;font-size:.8em">${intl.includes(meId)?'✅ 已勾选':'🎯 勾选意向'}</button>
+        <button onclick="openAssign('${st.id}')" style="flex:1;padding:5px;border:2px solid #2196F3;background:#fff;color:#2196F3;border-radius:6px;cursor:pointer;font-size:.8em">📋 分配</button>
+      </div>
+    </div>`);
+  });
+}
+
+function flyTo(sid){
+  const st=STORES.find(s=>s.id===sid);
+  map.setView([st.lat,st.lng],15);
+  markers[sid].openPopup();
+  document.querySelectorAll('.card').forEach(c=>c.classList.remove('hl'));
+  document.getElementById('cd-'+sid)?.classList.add('hl');
+}
+
+// ==================== ACTIONS ====================
+function addUser(name){
+  const id=uid(),user={id,name,c:COLORS[ST.users.length%COLORS.length]};
+  ST.users.push(user);meId=id;
+  saveLocal();broadcast();
+  return user;
+}
+
+function toggleInt(sid){
+  if(!meId){toast('请先设置您的身份','warn');return}
+  if(!ST.interest[sid])ST.interest[sid]=[];
+  const i=ST.interest[sid].indexOf(meId);
+  if(i>=0){ST.interest[sid].splice(i,1);toast('已取消意向','info')}
+  else{ST.interest[sid].push(meId);toast('已勾选意向 ✅','ok')}
+  saveLocal();broadcast();render();
+}
+
+function addAssign(sid,uid_){
+  if(!ST.assign[sid])ST.assign[sid]=[];
+  const store=STORES.find(s=>s.id===sid);
+  if(ST.assign[sid].length>=store.cap){toast('名额已满！','warn');return false}
+  // Check if already assigned to another store
+  for(const[k,v]of Object.entries(ST.assign)){
+    if(k!==sid&&v.includes(uid_)){toast('该成员已分配到其他门店','warn');return false}
+  }
+  if(!ST.assign[sid].includes(uid_)){ST.assign[sid].push(uid_);saveLocal();broadcast();render();toast('分配成功 ✅','ok')}
+  return true;
+}
+
+function rmAssign(sid,uid_){
+  if(ST.assign[sid]){const i=ST.assign[sid].indexOf(uid_);if(i>=0){ST.assign[sid].splice(i,1);saveLocal();broadcast();render();toast('已取消分配','info')}}
+}
+
+function unassignSelf(sid){if(meId){rmAssign(sid,meId)}}
+
+function resetAll(){
+  if(confirm('确定要清除所有数据吗？此操作不可恢复。')){
+    ST={users:[],interest:{},assign:{}};
+    saveLocal();broadcast();
+    if(meId){
+      const u={id:meId,name:myName,c:COLORS[0]};
+      ST.users.push(u);
+      saveLocal();broadcast();
+    }
+    render();toast('已全部重置','info');
+  }
+}
+
+// ==================== SHARE / EXPORT / IMPORT ====================
+function genShareLink(){
+  const url=location.href.split('#')[0]+'?room='+myRoom;
+  navigator.clipboard.writeText(url).then(()=>toast('房间链接已复制！发给同事打开即可协作 🔗','ok'))
+    .catch(()=>prompt('复制此链接分享给同事：',url));
+}
+
+function doExport(){
+  navigator.clipboard.writeText(JSON.stringify(ST,null,2)).then(()=>toast('数据已复制到剪贴板 📋','ok'))
+    .catch(()=>prompt('复制以下数据：',JSON.stringify(ST,null,2)));
+}
+
+function doImport(){
+  const raw=document.getElementById('impData').value.trim();
+  if(!raw){toast('请粘贴数据','warn');return}
+  try{
+    const d=JSON.parse(raw);
+    // Merge
+    (d.users||[]).forEach(bu=>{if(!ST.users.find(u=>u.id===bu.id))ST.users.push(bu)});
+    Object.keys(d.interest||{}).forEach(k=>{
+      ST.interest[k]=[...new Set([...(ST.interest[k]||[]),...d.interest[k]])];
+    });
+    Object.keys(d.assign||{}).forEach(k=>{
+      const merged=[...new Set([...(ST.assign[k]||[]),...d.assign[k]])];
+      const st=STORES.find(s=>s.id===k);
+      ST.assign[k]=merged.slice(0,st?st.cap:merged.length);
+    });
+    saveLocal();broadcast();render();closeModal('importModal');toast('导入成功！','ok');
+  }catch(e){toast('数据格式错误，请检查 JSON','err')}
+}
+
+// ==================== SETUP ====================
+function doSetup(){
+  const name=document.getElementById('uName').value.trim();
+  const room=document.getElementById('uRoom').value.trim().toUpperCase()||'XIAOMI';
+  if(!name){toast('请输入您的名字','warn');return}
+  myName=name;myRoom=room;
+
+  // Check URL params for room
+  const params=new URLSearchParams(location.search);
+  const urlRoom=params.get('room');
+  if(urlRoom)myRoom=urlRoom.toUpperCase();
+
+  loadLocal();
+  addUser(name);
+  initMap();
+  initSync();
+  closeModal('userModal');
+  render();
+  toast(`欢迎 ${name}！房间号：${myRoom} 🎉`,'ok');
+}
+
+// ==================== RENDER ====================
+function render(){renderStats();renderCards();renderMap();renderSidebar();renderHeader()}
+
+function renderHeader(){
+  const u=me();
+  document.getElementById('userBadge').innerHTML=u?
+    `<span class="avatar" style="background:${u.c}">${u.name[0]}</span><span>${u.name}</span>`:'';
+}
+
+function renderStats(){
+  const asn=Object.values(ST.assign).reduce((s,a)=>s+a.length,0);
+  const itn=Object.values(ST.interest).reduce((s,a)=>s+a.length,0);
+  sAsn.textContent=asn;sUsr.textContent=ST.users.length;sInt.textContent=itn;
+  sCap.textContent=STORES.reduce((s,st)=>s+st.cap,0);
+}
+
+function renderCards(){
+  sGrid.innerHTML=STORES.map(st=>{
+    const intl=ST.interest[st.id]||[],asnl=ST.assign[st.id]||[];
+    const iMe=intl.includes(meId),aMe=asnl.includes(meId),full=asnl.length>=st.cap;
+
+    const intTags=intl.length?intl.map(u=>{
+      const p=findU(u);return p?`<span class="itag" style="background:${p.c}">${p.name}</span>`:'';
+    }).join(''):'<span class="empty-txt">暂无意向</span>';
+
+    let slots='';
+    for(let i=0;i<st.cap;i++){
+      if(i<asnl.length){
+        const p=findU(asnl[i]);
+        slots+=`<div class="slot filled" style="background:${p?p.c:'#999'}" onclick="event.stopPropagation();rmAssign('${st.id}','${asnl[i]}')">
+          <span class="si">👤</span><span class="sn">${p?p.name:'?'}</span><span class="sx">✕</span></div>`;
+      } else {
+        slots+=`<div class="slot empty" onclick="event.stopPropagation();openAssign('${st.id}')">
+          <span class="si">➕</span><span>空位</span></div>`;
+      }
+    }
+
+    return `<div class="card${aMe?' assigned':''}" id="cd-${st.id}" onclick="flyTo('${st.id}')">
+      <h3>📍 ${st.sn}</h3>
+      <div class="tags">
+        <span class="tag tg-d">${st.d}</span>
+        <span class="tag tg-t">${st.t}</span>
+        <span class="tag tg-c">👥 ${st.cap}人/日</span>
+      </div>
+      <div class="csec">
+        <div class="csec-t">🎯 意向成员${intl.length?`（${intl.length}人）`:''} ${intl.length>st.cap?`<span class="bfull">超额 ${intl.length-st.cap}</span>`:''}</div>
+        <div class="ilt">${intTags}</div>
+      </div>
+      <div class="csec">
+        <div class="csec-t">📋 名额分配 ${asnl.length}/${st.cap} ${full?'<span class="bfull">已满</span>':''}</div>
+        <div class="slots">${slots}</div>
+      </div>
+      <div class="cacts">
+        <button class="b-int${iMe?' on':''}" onclick="event.stopPropagation();toggleInt('${st.id}')">${iMe?'✅ 已勾选':'🎯 勾选意向'}</button>
+        <button class="b-as" onclick="event.stopPropagation();openAssign('${st.id}')">📋 分配</button>
+        ${aMe?`<button class="b-un" onclick="event.stopPropagation();unassignSelf('${st.id}')">✕ 退出</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSidebar(){
+  mList.innerHTML=ST.users.map(u=>{
+    const asid=Object.keys(ST.assign).find(k=>ST.assign[k].includes(u.id));
+    const asname=asid?STORES.find(s=>s.id===asid)?.sn:null;
+    const iCount=Object.values(ST.interest).filter(a=>a.includes(u.id)).length;
+    return `<div class="mitem">
+      <span class="avatar" style="background:${u.c}">${u.name[0]}</span>
+      <div><div class="mn">${u.name}${u.id===meId?' ⭐':''}</div>
+      <div style="font-size:.73em;color:var(--tm)">意向${iCount}家</div></div>
+      <span class="ma">${asname?'📍 '+asname:'未分配'}</span>
+    </div>`;
+  }).join('')||'<div class="empty-txt">暂无成员</div>';
+
+  oList.innerHTML=STORES.map(st=>{
+    const a=(ST.assign[st.id]||[]).length,pct=Math.round(a/st.cap*100);
+    const c=pct>=100?'#f44336':pct>=50?'#FF9800':'#4CAF50';
+    return `<div class="mitem" style="gap:8px"><span style="min-width:80px;font-size:.82em">${st.sn}</span>
+      <div class="pbar"><div class="pfill" style="width:${pct}%;background:${c}"></div></div>
+      <span class="ocount" style="font-size:.8em;font-weight:700;min-width:32px;text-align:right">${a}/${st.cap}</span></div>`;
+  }).join('');
+}
+
+// ==================== ASSIGN MODAL ====================
+function openAssign(sid){
+  const st=STORES.find(s=>s.id===sid),cur=ST.assign[sid]||[];
+  aTitle.textContent=`📋 分配名额 — ${st.sn}（${cur.length}/${st.cap}）`;
+  aBody.innerHTML=`<p style="margin-bottom:12px;color:#666;font-size:.88em">勾选成员分配到此门店。每人只能分配到一家门店，已分配到其他门店的成员不可选。</p>`+
+    (ST.users.length?ST.users.map(u=>{
+      const here=cur.includes(u.id);
+      const elseW=Object.keys(ST.assign).some(k=>k!==sid&&ST.assign[k].includes(u.id));
+      const dis=!here&&(elseW||cur.length>=st.cap);
+      return `<label class="au${here?' sel':''}${dis?' dis':''}" onclick="event.stopPropagation()">
+        <input type="checkbox"${here?' checked':''}${dis?' disabled':''} onchange="chkAssign('${sid}','${u.id}',this.checked)">
+        <span class="avatar" style="background:${u.c}">${u.name[0]}</span>
+        <span style="font-weight:600">${u.name}</span>
+        ${elseW?'<span class="info">已分配到其他门店</span>':''}
+      </label>`;
+    }).join(''):'<p class="empty-txt">暂无成员，请先添加</p>');
+  openModal('assignModal');
+}
+
+function chkAssign(sid,uid_,chk){
+  if(chk){const ok=addAssign(sid,uid_);}
+  else{rmAssign(sid,uid_)}
+  openAssign(sid);
+}
+
+// ==================== INIT ====================
+(function init(){
+  // Check URL for room parameter
+  const params=new URLSearchParams(location.search);
+  const urlRoom=params.get('room');
+
+  // Try to restore session
+  try{
+    const saved=localStorage.getItem(SKEY+'-me');
+    if(saved){
+      const s=JSON.parse(saved);
+      if(s.id&&s.name){
+        myName=s.name;myRoom=urlRoom?urlRoom.toUpperCase():(s.room||'XIAOMI');
+        loadLocal();
+        meId=s.id;
+        // Verify user exists in state
+        if(!findU(meId)){
+          const u={id:meId,name:myName,c:COLORS[0]};
+          ST.users.push(u);
+          saveLocal();
+        }
+        closeModal('userModal');
+        initMap();
+        initSync();
+        render();
+        return;
+      }
+    }
+  }catch(e){}
+
+  // Show setup modal
+  if(urlRoom)document.getElementById('uRoom').value=urlRoom.toUpperCase();
+})();
+</script>
+</body>
+</html>
